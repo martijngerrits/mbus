@@ -14,20 +14,20 @@ type WMBusHeader struct {
 	// LSB first
 	Id []byte // 4 bytes
 
-	Version byte
+	Version    byte
 	DeviceType byte
 
 	AccessNumber byte
-	Status byte
+	Status       byte
 
 	NEncryptedBlocks int
-	EncryptionMode byte
+	EncryptionMode   byte
 }
 
 type WMBusFrame struct {
-	Start byte
-	Stop byte
-	Length byte
+	Start   byte
+	Stop    byte
+	Length  byte
 	Control byte
 
 	Header WMBusHeader
@@ -35,7 +35,7 @@ type WMBusFrame struct {
 	ControlInformation byte
 
 	// Holds to unprocessed bytes
-	Data []byte
+	Data     []byte
 	DataSize int
 
 	// Holds the Data Records
@@ -48,20 +48,20 @@ type WMBusFrame struct {
 	Timestamp time.Time
 
 	HeaderEnabled bool
-	CRCEnabled bool
-	RSSIEnabled bool
+	CRCEnabled    bool
+	RSSIEnabled   bool
 }
 
 func NewWirelessMBusFrame() *WMBusFrame {
 	return &WMBusFrame{
 		Header: WMBusHeader{
 			Manufacturer: make([]byte, 2),
-			Id: make([]byte, 4),
+			Id:           make([]byte, 4),
 		},
-		FrameData: MbusDataFrame{},
+		FrameData:     MbusDataFrame{},
 		HeaderEnabled: true,
-		CRCEnabled: true,
-		RSSIEnabled: false,
+		CRCEnabled:    true,
+		RSSIEnabled:   false,
 	}
 }
 
@@ -83,9 +83,9 @@ func (frame *WMBusFrame) DecodeManufacturer() (string, error) {
 
 	return fmt.Sprintf(
 		"%s%s%s%s",
-		string(((manufacturerId >> 10) & 0x001F) + 64),
-		string(((manufacturerId >> 5) & 0x001F) + 64),
-		string((manufacturerId & 0x001F) + 64),
+		string(((manufacturerId>>10)&0x001F)+64),
+		string(((manufacturerId>>5)&0x001F)+64),
+		string((manufacturerId&0x001F)+64),
 		"",
 	), nil
 }
@@ -138,7 +138,7 @@ func (frame *WMBusFrame) ProtocolVersion() (int, error) {
 
 // Method that will return true if there is an encryption mode present
 func (frame *WMBusFrame) HasEncryptionMode() bool {
-	return frame.Header.EncryptionMode & 0x0F != 0
+	return frame.Header.EncryptionMode&0x0F != 0
 }
 
 // Method that will check if the 2 first data bytes are 0x2F,
@@ -228,7 +228,7 @@ func (frame *WMBusFrame) DecryptData(key []byte) error {
 		return err
 	}
 
-	if len(frame.Data) % aes.BlockSize != 0 {
+	if len(frame.Data)%aes.BlockSize != 0 {
 		return fmt.Errorf("data length is not a multiple of the block size")
 	}
 
@@ -299,14 +299,14 @@ func (frame *WMBusFrame) DataVariableParse() error {
 	dr := 0
 
 	for {
-		if i > frame.DataSize - 1 {
+		if i > frame.DataSize-1 {
 			break
 		}
 
 		// Skip filler bytes (0x2F)
 		// First 2 encryption verification bytes for example ( if present )
 		// And the filler bytes at the end to create the aes blocksize length
-		if frame.Data[i] & 0xFF == DIB_DIF_IDLE_FILLER {
+		if frame.Data[i]&0xFF == DIB_DIF_IDLE_FILLER {
 			if DEBUG {
 				if i < 2 {
 					fmt.Printf("Skipping encryption verification byte\n")
@@ -335,7 +335,7 @@ func (frame *WMBusFrame) DataVariableParse() error {
 		}
 
 		if record.DIB.DIF == DIB_DIF_MANUFACTURER_SPECIFIC || record.DIB.DIF == DIB_DIF_MORE_RECORDS_FOLLOW {
-			if record.DIB.DIF & 0xFF == DIB_DIF_MORE_RECORDS_FOLLOW {
+			if record.DIB.DIF&0xFF == DIB_DIF_MORE_RECORDS_FOLLOW {
 				variableRecord.MoreRecordsFollow = true
 			}
 
@@ -363,7 +363,7 @@ func (frame *WMBusFrame) DataVariableParse() error {
 		record.DIB.DIFe = make([]byte, 10)
 
 		for {
-			if i > frame.DataSize || frame.Data[i] & DIB_DIF_EXTENSION_BIT == 0 {
+			if i > frame.DataSize || frame.Data[i]&DIB_DIF_EXTENSION_BIT == 0 {
 				break
 			}
 
@@ -371,7 +371,7 @@ func (frame *WMBusFrame) DataVariableParse() error {
 				return fmt.Errorf("too many DIFE")
 			}
 
-			dife := frame.Data[i + 1]
+			dife := frame.Data[i+1]
 			record.DIB.DIFe[record.DIB.NDIFe] = dife
 
 			record.DIB.NDIFe++
@@ -392,14 +392,14 @@ func (frame *WMBusFrame) DataVariableParse() error {
 			fmt.Printf("VIB.VIF: 0x%.2X; ", record.VIB.VIF)
 		}
 
-		if record.VIB.VIF & DIB_VIF_WITHOUT_EXTENSION == 0x7C {
+		if record.VIB.VIF&DIB_VIF_WITHOUT_EXTENSION == 0x7C {
 			i++
 			variableVIFLength := int(frame.Data[i])
 			if variableVIFLength > len(record.VIB.Custom) {
 				return fmt.Errorf("too long variable length VIF")
 			}
 
-			if i + variableVIFLength > frame.DataSize {
+			if i+variableVIFLength > frame.DataSize {
 				return fmt.Errorf("premature end of record at variable length VIF")
 			}
 
@@ -413,13 +413,13 @@ func (frame *WMBusFrame) DataVariableParse() error {
 		// VIFE
 		record.VIB.NVIFe = 0
 
-		if record.VIB.VIF & DIB_VIF_EXTENSION_BIT != 0 {
+		if record.VIB.VIF&DIB_VIF_EXTENSION_BIT != 0 {
 			record.VIB.VIFe = make([]byte, 10)
 			record.VIB.VIFe[0] = frame.Data[i]
 			record.VIB.NVIFe++
 
 			for {
-				if i > frame.DataSize || frame.Data[i] & DIB_DIF_EXTENSION_BIT == 0 {
+				if i > frame.DataSize || frame.Data[i]&DIB_DIF_EXTENSION_BIT == 0 {
 					break
 				}
 
@@ -427,7 +427,7 @@ func (frame *WMBusFrame) DataVariableParse() error {
 					return fmt.Errorf("too many VIFE")
 				}
 
-				vife := frame.Data[i + 1]
+				vife := frame.Data[i+1]
 				record.VIB.VIFe[record.VIB.NVIFe] = vife
 
 				record.VIB.NVIFe++
@@ -441,7 +441,7 @@ func (frame *WMBusFrame) DataVariableParse() error {
 		if DEBUG {
 			if record.VIB.NVIFe > 0 {
 				fmt.Printf("VIFe:")
-				for i := 0; i < record.VIB.NVIFe - 1; i++ {
+				for i := 0; i < record.VIB.NVIFe-1; i++ {
 					fmt.Printf(" 0x%.2X", record.VIB.VIFe[i])
 				}
 				fmt.Printf("; ")
@@ -456,7 +456,7 @@ func (frame *WMBusFrame) DataVariableParse() error {
 
 		// re-calculate data length, if of variable length type
 		// 0x0D => Flag for variable data length
-		if record.DIB.DIF & DATA_RECORD_DIF_MASK_DATA == 0x0D {
+		if record.DIB.DIF&DATA_RECORD_DIF_MASK_DATA == 0x0D {
 			if frame.Data[i] <= 0xBF {
 				i++
 				record.DataSize = int(frame.Data[i])
@@ -479,7 +479,7 @@ func (frame *WMBusFrame) DataVariableParse() error {
 			fmt.Printf("Record datasize: %d; ", record.DataSize)
 		}
 
-		if i + record.DataSize > frame.DataSize {
+		if i+record.DataSize > frame.DataSize {
 			return fmt.Errorf("premature end of record at data.")
 		}
 
@@ -541,7 +541,7 @@ func (frame *WMBusFrame) DataVariableParse() error {
 //	return nil
 //}
 
-func (frame *WMBusFrame) DecodeDataRecords() ([]DecodedDataRecord, error)  {
+func (frame *WMBusFrame) DecodeDataRecords() ([]DecodedDataRecord, error) {
 	//decodedDataRecords := make([]DecodedDataRecord, len(frame.FrameData.Variable.DataRecords))
 	var decodedDataRecords []DecodedDataRecord
 
@@ -572,11 +572,12 @@ func (frame *WMBusFrame) DecodeDataRecords() ([]DecodedDataRecord, error)  {
 		decodedDataRecord.Exponent = unit.Exp
 		decodedDataRecord.Type = string(unit.Type)
 
-		value, err := record.DecodeValue()
+		value, raw, err := record.DecodeValue()
 		if err != nil {
 			return nil, err
 		}
 		decodedDataRecord.Value = value
+		decodedDataRecord.RawValue = raw
 
 		// Append to the rest
 		decodedDataRecords = append(decodedDataRecords, decodedDataRecord)
@@ -588,13 +589,13 @@ func (frame *WMBusFrame) DecodeDataRecords() ([]DecodedDataRecord, error)  {
 func (frame *WMBusFrame) DecodeFrame() (*DecodedFrame, error) {
 	decodedFrame := &DecodedFrame{
 		ParsedAt: time.Now(),
-		Version: int(frame.Header.Version),
+		Version:  int(frame.Header.Version),
 	}
 
 	//Decode serial number
 	serialNumber, err := frame.DecodeSerialNumber()
 	if err != nil {
-	   return nil, err
+		return nil, err
 	}
 	decodedFrame.SerialNumber = serialNumber
 

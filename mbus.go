@@ -1,11 +1,11 @@
 package mbus
 
 import (
-    "bytes"
-    "context"
-    "fmt"
-    "math"
-    "time"
+	"bytes"
+	"context"
+	"fmt"
+	"math"
+	"time"
 )
 
 const (
@@ -13,422 +13,422 @@ const (
 )
 
 var (
-    DEBUG = false
+	DEBUG = false
 )
 
 type Frame interface {
-    //------------------------------------------------------------------------------
-    /// Calculate the checksum of the M-Bus frame. The checksum algorithm is the
-    /// arithmetic sum of the frame content, without using carry. Which content
-    /// that is included in the checksum calculation depends on the frame type.
-    //------------------------------------------------------------------------------
-    //CalculateChecksum() byte
-    //
-    //CalculateLength() int
+	//------------------------------------------------------------------------------
+	/// Calculate the checksum of the M-Bus frame. The checksum algorithm is the
+	/// arithmetic sum of the frame content, without using carry. Which content
+	/// that is included in the checksum calculation depends on the frame type.
+	//------------------------------------------------------------------------------
+	//CalculateChecksum() byte
+	//
+	//CalculateLength() int
 
-    //Verify() error
+	//Verify() error
 
-    //Encode() ([]byte, int)
+	//Encode() ([]byte, int)
 
+	//DecodeTariff() (int, error)
+	//DecodeDevice() (int, error)
+	//DecodeUnit() (string, error)
 
-    //DecodeTariff() (int, error)
-    //DecodeDevice() (int, error)
-    //DecodeUnit() (string, error)
+	DataParse() error
 
-    DataParse() error
+	DecodeFrame() (*DecodedFrame, error)
 
-    DecodeFrame() (*DecodedFrame, error)
+	DecodeManufacturer() (string, error)
+	DecodeSerialNumber() (string, error)
+	DecodeProductName() (string, error)
+	DecodeDeviceType() (string, error)
+	DecodeDataRecords() ([]DecodedDataRecord, error)
 
-    DecodeManufacturer() (string, error)
-    DecodeSerialNumber() (string, error)
-    DecodeProductName() (string, error)
-    DecodeDeviceType() (string, error)
-    DecodeDataRecords() ([]DecodedDataRecord, error)
+	ProtocolVersion() (int, error)
 
-    ProtocolVersion() (int, error)
-
-    HasEncryptionMode() bool
-    DecryptData(key []byte) error
-    IsDecrypted() bool
+	HasEncryptionMode() bool
+	DecryptData(key []byte) error
+	IsDecrypted() bool
 }
 
 type MbusHandle struct {
-    Fd interface{} // Can be either Serial or TCP
+	Fd interface{} // Can be either Serial or TCP
 
-    MaxDataRetry int
-    MaxSearchRetry int
-    IsSerial bool
+	MaxDataRetry   int
+	MaxSearchRetry int
+	IsSerial       bool
 }
 
 type Handle interface {
-    Open(device string, config interface{}) error
-    Close() error
+	Open(device string, config interface{}) error
+	Close() error
 
-    // Send
-    Send(frame Frame) error
+	// Send
+	Send(frame Frame) error
 
-    // Receive frame through a channel
-    Stream(ctx context.Context) chan Frame
-    // Receive a single frame from the serial buffer
-    ReceiveFrame() (Frame, error)
+	// Receive frame through a channel
+	Stream(ctx context.Context) chan Frame
+	// Receive a single frame from the serial buffer
+	ReceiveFrame() (Frame, error)
 }
 
 type Device struct {
-    SerialNumber string
-    AESKey []byte
+	SerialNumber string
+	AESKey       []byte
 }
 
 type DataInformationBlock struct {
-    DIF byte
-    DIFe []byte
+	DIF  byte
+	DIFe []byte
 
-    NDIFe int
+	NDIFe int
 }
 
 type ValueInformationBlock struct {
-    VIF byte
-    VIFe []byte
+	VIF  byte
+	VIFe []byte
 
-    NVIFe int
+	NVIFe int
 
-    Custom string
+	Custom string
 }
 
 type DataRecord struct {
-    DIB DataInformationBlock
-    VIB ValueInformationBlock
+	DIB DataInformationBlock
+	VIB ValueInformationBlock
 
-    Data []byte
-    DataSize int
+	Data     []byte
+	DataSize int
 
-    Timestamp time.Time
+	Timestamp time.Time
 }
 
 type VariableData struct {
-    DataRecords []*DataRecord
+	DataRecords []*DataRecord
 
-    Data *[]byte
-    DataSize int
+	Data     *[]byte
+	DataSize int
 
-    MoreRecordsFollow bool
+	MoreRecordsFollow bool
 }
 
 type MbusDataFrame struct {
-    Type int
-    Error int
+	Type  int
+	Error int
 
-    Variable *VariableData
-    Fixed byte
+	Variable *VariableData
+	Fixed    byte
 }
 
 type DecodedDataRecord struct {
-    Function string
-    StorageNumber int
+	Function      string
+	StorageNumber int
 
-    Tariff int
-    Device int
+	Tariff int
+	Device int
 
-    Unit string
-    Exponent float64
-    Type string
-    Quantity string
+	Unit     string
+	Exponent float64
+	Type     string
+	Quantity string
 
-    Value string
+	Value    string
+	RawValue interface{}
 }
 
 type DecodedFrame struct {
-    SerialNumber string
-    Manufacturer string
-    ProductName string
-    Version int
-    DeviceType string
-    AccessNumber int16
+	SerialNumber string
+	Manufacturer string
+	ProductName  string
+	Version      int
+	DeviceType   string
+	AccessNumber int16
 
-    Signature int16
+	Signature int16
 
-    Status int
-    ReadableStatus string
+	Status         int
+	ReadableStatus string
 
-    DataRecords []DecodedDataRecord
+	DataRecords []DecodedDataRecord
 
-    ParsedAt time.Time
+	ParsedAt time.Time
 }
 
 func DeviceTypeLookup(deviceType byte) (string, error) {
-    buffer := bytes.Buffer{}
-    var err error
+	buffer := bytes.Buffer{}
+	var err error
 
-    switch deviceType {
-    case VARIABLE_DATA_MEDIUM_OTHER:
-        _, err = fmt.Fprint(&buffer, "Other")
-        break
-    case VARIABLE_DATA_MEDIUM_OIL:
-        _, err = fmt.Fprint(&buffer, "Oild")
-        break
-    case VARIABLE_DATA_MEDIUM_ELECTRICITY:
-        _, err = fmt.Fprint(&buffer, "Electricity")
-        break
-    case VARIABLE_DATA_MEDIUM_GAS:
-        _, err = fmt.Fprint(&buffer, "Gas")
-        break
-    case VARIABLE_DATA_MEDIUM_HEAT_OUT:
-        _, err = fmt.Fprint(&buffer, "Heat: Outlet")
-        break
-    case VARIABLE_DATA_MEDIUM_STEAM:
-        _, err = fmt.Fprint(&buffer, "Steam")
-        break
-    case VARIABLE_DATA_MEDIUM_HOT_WATER:
-        _, err = fmt.Fprint(&buffer, "Warm water (30-90°C)")
-        break
-    case VARIABLE_DATA_MEDIUM_WATER:
-        _, err = fmt.Fprint(&buffer, "Warm")
-        break
-    case VARIABLE_DATA_MEDIUM_HEAT_COST:
-        _, err = fmt.Fprint(&buffer, "Heat Cost Allocator")
-        break
-    case VARIABLE_DATA_MEDIUM_COMPR_AIR:
-        _, err = fmt.Fprint(&buffer, "Compressed Air")
-        break
-    case VARIABLE_DATA_MEDIUM_COOL_OUT:
-        _, err = fmt.Fprint(&buffer, "Cooling load meter: Outlet")
-        break
-    case VARIABLE_DATA_MEDIUM_COOL_IN:
-        _, err = fmt.Fprint(&buffer, "Cooling load meter: Inlet")
-        break
-    case VARIABLE_DATA_MEDIUM_HEAT_IN:
-        _, err = fmt.Fprint(&buffer, "Heat: Inlet")
-        break
-    case VARIABLE_DATA_MEDIUM_HEAT_COOL:
-        _, err = fmt.Fprint(&buffer, "Heat / Cooling load meter")
-        break
-    case VARIABLE_DATA_MEDIUM_BUS:
-        _, err = fmt.Fprint(&buffer, "Bus / System")
-        break
-    case VARIABLE_DATA_MEDIUM_UNKNOWN:
-        _, err = fmt.Fprint(&buffer, "Unknown Device type")
-        break
-    case VARIABLE_DATA_MEDIUM_IRRIGATION:
-        _, err = fmt.Fprint(&buffer, "Irrigation Water")
-        break
-    case VARIABLE_DATA_MEDIUM_WATER_LOGGER:
-        _, err = fmt.Fprint(&buffer, "Water Logger")
-        break
-    case VARIABLE_DATA_MEDIUM_GAS_LOGGER:
-        _, err = fmt.Fprint(&buffer, "Gas Logger")
-        break
-    case VARIABLE_DATA_MEDIUM_GAS_CONV:
-        _, err = fmt.Fprint(&buffer, "Gas Converter")
-        break
-    case VARIABLE_DATA_MEDIUM_COLORIFIC:
-        _, err = fmt.Fprint(&buffer, "Calorific value")
-        break
-    case VARIABLE_DATA_MEDIUM_BOIL_WATER:
-        _, err = fmt.Fprint(&buffer, "Hot water (>90°C)")
-        break
-    case VARIABLE_DATA_MEDIUM_COLD_WATER:
-        _, err = fmt.Fprint(&buffer, "Cold water")
-        break
-    case VARIABLE_DATA_MEDIUM_DUAL_WATER:
-        _, err = fmt.Fprint(&buffer, "Dual water")
-        break
-    case VARIABLE_DATA_MEDIUM_PRESSURE:
-        _, err = fmt.Fprint(&buffer, "Pressure")
-        break
-    case VARIABLE_DATA_MEDIUM_ADC:
-        _, err = fmt.Fprint(&buffer, "A/D Converter")
-        break
-    case VARIABLE_DATA_MEDIUM_SMOKE:
-        _, err = fmt.Fprint(&buffer, "Smoke Detector")
-        break
-    case VARIABLE_DATA_MEDIUM_ROOM_SENSOR:
-        _, err = fmt.Fprint(&buffer, "Ambient Sensor")
-        break
-    case VARIABLE_DATA_MEDIUM_GAS_DETECTOR:
-        _, err = fmt.Fprint(&buffer, "Gas Detector")
-        break
-    case VARIABLE_DATA_MEDIUM_BREAKER_E:
-        _, err = fmt.Fprint(&buffer, "Breaker: Electricity")
-        break
-    case VARIABLE_DATA_MEDIUM_VALVE:
-        _, err = fmt.Fprint(&buffer, "Valve: Gas or Water")
-        break
-    case VARIABLE_DATA_MEDIUM_CUSTOMER_UNIT:
-        _, err = fmt.Fprint(&buffer, "Customer Unit: Display Device")
-        break
-    case VARIABLE_DATA_MEDIUM_WASTE_WATER:
-        _, err = fmt.Fprint(&buffer, "Waste Water")
-        break
-    case VARIABLE_DATA_MEDIUM_GARBAGE:
-        _, err = fmt.Fprint(&buffer, "Garbage")
-        break
-    case VARIABLE_DATA_MEDIUM_VOC:
-        _, err = fmt.Fprint(&buffer, "VOC Sensor")
-        break
-    case VARIABLE_DATA_MEDIUM_SERVICE_UNIT:
-        _, err = fmt.Fprint(&buffer, "Service Unit")
-        break
-    case VARIABLE_DATA_MEDIUM_RC_SYSTEM:
-        _, err = fmt.Fprint(&buffer, "Radio Converter: System")
-        break
-    case VARIABLE_DATA_MEDIUM_RC_METER:
-        _, err = fmt.Fprint(&buffer, "Radio Converter: Meter")
-        break
-    case 0x22, 0x23, 0x24, 0x26, 0x27, 0x2A, 0x2C, 0x2D, 0x2E, 0x2F, 0x31, 0x32, 0x33, 0x34, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F:
-        _, err = fmt.Fprint(&buffer, "Reserved")
-        break
+	switch deviceType {
+	case VARIABLE_DATA_MEDIUM_OTHER:
+		_, err = fmt.Fprint(&buffer, "Other")
+		break
+	case VARIABLE_DATA_MEDIUM_OIL:
+		_, err = fmt.Fprint(&buffer, "Oild")
+		break
+	case VARIABLE_DATA_MEDIUM_ELECTRICITY:
+		_, err = fmt.Fprint(&buffer, "Electricity")
+		break
+	case VARIABLE_DATA_MEDIUM_GAS:
+		_, err = fmt.Fprint(&buffer, "Gas")
+		break
+	case VARIABLE_DATA_MEDIUM_HEAT_OUT:
+		_, err = fmt.Fprint(&buffer, "Heat: Outlet")
+		break
+	case VARIABLE_DATA_MEDIUM_STEAM:
+		_, err = fmt.Fprint(&buffer, "Steam")
+		break
+	case VARIABLE_DATA_MEDIUM_HOT_WATER:
+		_, err = fmt.Fprint(&buffer, "Warm water (30-90°C)")
+		break
+	case VARIABLE_DATA_MEDIUM_WATER:
+		_, err = fmt.Fprint(&buffer, "Warm")
+		break
+	case VARIABLE_DATA_MEDIUM_HEAT_COST:
+		_, err = fmt.Fprint(&buffer, "Heat Cost Allocator")
+		break
+	case VARIABLE_DATA_MEDIUM_COMPR_AIR:
+		_, err = fmt.Fprint(&buffer, "Compressed Air")
+		break
+	case VARIABLE_DATA_MEDIUM_COOL_OUT:
+		_, err = fmt.Fprint(&buffer, "Cooling load meter: Outlet")
+		break
+	case VARIABLE_DATA_MEDIUM_COOL_IN:
+		_, err = fmt.Fprint(&buffer, "Cooling load meter: Inlet")
+		break
+	case VARIABLE_DATA_MEDIUM_HEAT_IN:
+		_, err = fmt.Fprint(&buffer, "Heat: Inlet")
+		break
+	case VARIABLE_DATA_MEDIUM_HEAT_COOL:
+		_, err = fmt.Fprint(&buffer, "Heat / Cooling load meter")
+		break
+	case VARIABLE_DATA_MEDIUM_BUS:
+		_, err = fmt.Fprint(&buffer, "Bus / System")
+		break
+	case VARIABLE_DATA_MEDIUM_UNKNOWN:
+		_, err = fmt.Fprint(&buffer, "Unknown Device type")
+		break
+	case VARIABLE_DATA_MEDIUM_IRRIGATION:
+		_, err = fmt.Fprint(&buffer, "Irrigation Water")
+		break
+	case VARIABLE_DATA_MEDIUM_WATER_LOGGER:
+		_, err = fmt.Fprint(&buffer, "Water Logger")
+		break
+	case VARIABLE_DATA_MEDIUM_GAS_LOGGER:
+		_, err = fmt.Fprint(&buffer, "Gas Logger")
+		break
+	case VARIABLE_DATA_MEDIUM_GAS_CONV:
+		_, err = fmt.Fprint(&buffer, "Gas Converter")
+		break
+	case VARIABLE_DATA_MEDIUM_COLORIFIC:
+		_, err = fmt.Fprint(&buffer, "Calorific value")
+		break
+	case VARIABLE_DATA_MEDIUM_BOIL_WATER:
+		_, err = fmt.Fprint(&buffer, "Hot water (>90°C)")
+		break
+	case VARIABLE_DATA_MEDIUM_COLD_WATER:
+		_, err = fmt.Fprint(&buffer, "Cold water")
+		break
+	case VARIABLE_DATA_MEDIUM_DUAL_WATER:
+		_, err = fmt.Fprint(&buffer, "Dual water")
+		break
+	case VARIABLE_DATA_MEDIUM_PRESSURE:
+		_, err = fmt.Fprint(&buffer, "Pressure")
+		break
+	case VARIABLE_DATA_MEDIUM_ADC:
+		_, err = fmt.Fprint(&buffer, "A/D Converter")
+		break
+	case VARIABLE_DATA_MEDIUM_SMOKE:
+		_, err = fmt.Fprint(&buffer, "Smoke Detector")
+		break
+	case VARIABLE_DATA_MEDIUM_ROOM_SENSOR:
+		_, err = fmt.Fprint(&buffer, "Ambient Sensor")
+		break
+	case VARIABLE_DATA_MEDIUM_GAS_DETECTOR:
+		_, err = fmt.Fprint(&buffer, "Gas Detector")
+		break
+	case VARIABLE_DATA_MEDIUM_BREAKER_E:
+		_, err = fmt.Fprint(&buffer, "Breaker: Electricity")
+		break
+	case VARIABLE_DATA_MEDIUM_VALVE:
+		_, err = fmt.Fprint(&buffer, "Valve: Gas or Water")
+		break
+	case VARIABLE_DATA_MEDIUM_CUSTOMER_UNIT:
+		_, err = fmt.Fprint(&buffer, "Customer Unit: Display Device")
+		break
+	case VARIABLE_DATA_MEDIUM_WASTE_WATER:
+		_, err = fmt.Fprint(&buffer, "Waste Water")
+		break
+	case VARIABLE_DATA_MEDIUM_GARBAGE:
+		_, err = fmt.Fprint(&buffer, "Garbage")
+		break
+	case VARIABLE_DATA_MEDIUM_VOC:
+		_, err = fmt.Fprint(&buffer, "VOC Sensor")
+		break
+	case VARIABLE_DATA_MEDIUM_SERVICE_UNIT:
+		_, err = fmt.Fprint(&buffer, "Service Unit")
+		break
+	case VARIABLE_DATA_MEDIUM_RC_SYSTEM:
+		_, err = fmt.Fprint(&buffer, "Radio Converter: System")
+		break
+	case VARIABLE_DATA_MEDIUM_RC_METER:
+		_, err = fmt.Fprint(&buffer, "Radio Converter: Meter")
+		break
+	case 0x22, 0x23, 0x24, 0x26, 0x27, 0x2A, 0x2C, 0x2D, 0x2E, 0x2F, 0x31, 0x32, 0x33, 0x34, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F:
+		_, err = fmt.Fprint(&buffer, "Reserved")
+		break
 
-    // add more ...
-    default:
-        _, err = fmt.Fprintf(&buffer, "Unknown medium (0x%.2x)", deviceType)
-        break
-    }
+	// add more ...
+	default:
+		_, err = fmt.Fprintf(&buffer, "Unknown medium (0x%.2x)", deviceType)
+		break
+	}
 
-    if err != nil {
-        return "", err
-    }
+	if err != nil {
+		return "", err
+	}
 
-    return buffer.String(), nil
+	return buffer.String(), nil
 }
 
 func DataLengthLookup(dif byte) int {
-    switch dif & DATA_RECORD_DIF_MASK_DATA {
-    case 0x0:
-        return 0
-    case 0x1:
-        return 1
-    case 0x2:
-        return 2
-    case 0x3:
-        return 3
-    case 0x4:
-        return 4
-    case 0x5:
-        return 4
-    case 0x6:
-        return 6
-    case 0x7:
-        return 8
-    case 0x8:
-        return 0
-    case 0x9:
-        return 1
-    case 0xA:
-        return 2
-    case 0xB:
-        return 3
-    case 0xC:
-        return 4
-    case 0xD:
-        return 0
-    case 0xE:
-        return 6
-    case 0xF:
-        return 8
-    default:
-        return 0x00
-    }
+	switch dif & DATA_RECORD_DIF_MASK_DATA {
+	case 0x0:
+		return 0
+	case 0x1:
+		return 1
+	case 0x2:
+		return 2
+	case 0x3:
+		return 3
+	case 0x4:
+		return 4
+	case 0x5:
+		return 4
+	case 0x6:
+		return 6
+	case 0x7:
+		return 8
+	case 0x8:
+		return 0
+	case 0x9:
+		return 1
+	case 0xA:
+		return 2
+	case 0xB:
+		return 3
+	case 0xC:
+		return 4
+	case 0xD:
+		return 0
+	case 0xE:
+		return 6
+	case 0xF:
+		return 8
+	default:
+		return 0x00
+	}
 }
 
 func unitPrefix(exp int) string {
-    switch exp {
-    case 0:
-        return "0"
-    case -3:
-        return "m"
-    case -6:
-        return "my"
-    case 1:
-        return "10 "
-    case 2:
-        return "100 "
-    case 3:
-        return "k"
-    case 4:
-        return "10 k"
-    case 5:
-        return "100 k"
-    case 6:
-        return "M"
-    case 9:
-        return "G"
-    default:
-        return fmt.Sprintf("1e%d ", exp)
-    }
+	switch exp {
+	case 0:
+		return "0"
+	case -3:
+		return "m"
+	case -6:
+		return "my"
+	case 1:
+		return "10 "
+	case 2:
+		return "100 "
+	case 3:
+		return "k"
+	case 4:
+		return "10 k"
+	case 5:
+		return "100 k"
+	case 6:
+		return "M"
+	case 9:
+		return "G"
+	default:
+		return fmt.Sprintf("1e%d ", exp)
+	}
 }
 
 func unitDurationNN(pp int) string {
-    switch pp {
-    case 0:
-        return "hour(s)"
-    case 1:
-        return "day(s)"
-    case 2:
-        return "month(s)"
-    case 3:
-        return "year(s)"
-    default:
-        return "error: out-of-range"
-    }
+	switch pp {
+	case 0:
+		return "hour(s)"
+	case 1:
+		return "day(s)"
+	case 2:
+		return "month(s)"
+	case 3:
+		return "year(s)"
+	default:
+		return "error: out-of-range"
+	}
 }
 
 func (dib *DataInformationBlock) IsEndOfUserData() bool {
-    return dib.DIF == 0x0F || dib.DIF == 0x1F
+	return dib.DIF == 0x0F || dib.DIF == 0x1F
 }
 
 func (dib *DataInformationBlock) HasMoreRecordsToFollow() bool {
-    return dib.DIF == DIB_DIF_MORE_RECORDS_FOLLOW
+	return dib.DIF == DIB_DIF_MORE_RECORDS_FOLLOW
 }
 
 func (dib *DataInformationBlock) IsManufacturerSpecific() bool {
-    return dib.DIF == 0x0F
+	return dib.DIF == 0x0F
 }
 
 func (vib *ValueInformationBlock) UnitLookup() VIF {
-    var code int
+	var code int
 
-    if vib.VIF == 0xFB {
-        code = int(vib.VIFe[1]) & DIB_VIF_WITHOUT_EXTENSION | 0x200
-    } else if vib.VIF == 0xFD {
-       code = int(vib.VIFe[1]) & DIB_VIF_WITHOUT_EXTENSION | 0x100
-    } else if vib.VIF == 0x7C {
-        //var unit string
-        //DecodeASCII(vib.Custom, &unit)
-        return VIF{
-            Exp:  1,
-            //Unit:        unit,
-            Unit:        vib.Custom,
-            Type:     VIFUnit["VARIABLE_VIF"],
-            VIFUnitDesc: "",
-        }
-    } else if vib.VIF == 0xFC {
-        //  && (vib->vife[0] & 0x78) == 0x70
+	if vib.VIF == 0xFB {
+		code = int(vib.VIFe[1])&DIB_VIF_WITHOUT_EXTENSION | 0x200
+	} else if vib.VIF == 0xFD {
+		code = int(vib.VIFe[1])&DIB_VIF_WITHOUT_EXTENSION | 0x100
+	} else if vib.VIF == 0x7C {
+		//var unit string
+		//DecodeASCII(vib.Custom, &unit)
+		return VIF{
+			Exp: 1,
+			//Unit:        unit,
+			Unit:        vib.Custom,
+			Type:        VIFUnit["VARIABLE_VIF"],
+			VIFUnitDesc: "",
+		}
+	} else if vib.VIF == 0xFC {
+		//  && (vib->vife[0] & 0x78) == 0x70
 
-        // Disable this for now as it is implicit
-        // from 0xFC
-        // if vif & vtf_ebm {}
-        code := vib.VIFe[0] & DIB_VIF_WITHOUT_EXTENSION
-        var factor float64
+		// Disable this for now as it is implicit
+		// from 0xFC
+		// if vif & vtf_ebm {}
+		code := vib.VIFe[0] & DIB_VIF_WITHOUT_EXTENSION
+		var factor float64
 
-        if 0x70 <= code && code <= 0x77 {
-            factor = math.Pow10((int(vib.VIFe[0]) & 0x07) - 6)
-        } else if 0x78 <= code && code <= 0x7B {
-            factor = math.Pow10((int(vib.VIFe[0]) & 0x03) - 3)
-        } else if code == 0x7D {
-            // A bit unnecessary
-            factor = 1
-        }
+		if 0x70 <= code && code <= 0x77 {
+			factor = math.Pow10((int(vib.VIFe[0]) & 0x07) - 6)
+		} else if 0x78 <= code && code <= 0x7B {
+			factor = math.Pow10((int(vib.VIFe[0]) & 0x03) - 3)
+		} else if code == 0x7D {
+			// A bit unnecessary
+			factor = 1
+		}
 
-        return VIF{
-            Exp:         factor,
-            Unit:        vib.Custom,
-            Type:        VIFUnit["VARIABLE_VIF"],
-            VIFUnitDesc: "",
-        }
-    } else {
-        code = int(vib.VIF) & DIB_VIF_WITHOUT_EXTENSION
-    }
+		return VIF{
+			Exp:         factor,
+			Unit:        vib.Custom,
+			Type:        VIFUnit["VARIABLE_VIF"],
+			VIFUnitDesc: "",
+		}
+	} else {
+		code = int(vib.VIF) & DIB_VIF_WITHOUT_EXTENSION
+	}
 
-    return VIFTable[code]
+	return VIFTable[code]
 }
 
 //func (vib *ValueInformationBlock) UnitLookupFB() string {
