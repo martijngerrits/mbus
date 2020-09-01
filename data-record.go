@@ -2,7 +2,9 @@ package mbus
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	"math"
 )
 
 func (dr *DataRecord) DecodeRecordFunction() string {
@@ -75,9 +77,10 @@ func (dr *DataRecord) DecodeUnit() (VIF, error) {
 	return unit, nil
 }
 
-func (dr *DataRecord) DecodeValue() (string, interface{}, error) {
+func (dr *DataRecord) DecodeValue() (string, []byte, error) {
 	buffer := bytes.Buffer{}
-	var rawValue interface{}
+	rawValue := make([]byte, 8)
+
 	var intValue int
 	//var floatValue float64
 	//var timeValue time.Time
@@ -126,8 +129,11 @@ func (dr *DataRecord) DecodeValue() (string, interface{}, error) {
 				fmt.Printf("DIF 0x%.2x was decoded using 2 byte integer\n", dr.DIB.DIF)
 			}
 
-			rawValue = float64(intValue) * unit.Exp
-			_, err = fmt.Fprintf(&buffer, "%.2f", rawValue)
+			value := float64(intValue) * unit.Exp
+			bits := math.Float64bits(value)
+			binary.LittleEndian.PutUint64(rawValue, bits)
+
+			_, err = fmt.Fprintf(&buffer, "%.2f", value)
 		}
 		break
 
