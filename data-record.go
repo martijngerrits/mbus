@@ -205,7 +205,11 @@ func (dr *DataRecord) DecodeValue() (string, []byte, error) {
 			fmt.Printf("DIF 0x%.2x was decoded using %d digit BCD\n", dr.DIB.DIF, dr.DataSize*2)
 		}
 
-		_, err = fmt.Fprintf(&buffer, "%X", intValue)
+		value := float64(intValue) * unit.Exp
+		bits := math.Float64bits(value)
+		binary.LittleEndian.PutUint64(rawValue, bits)
+
+		_, err = fmt.Fprintf(&buffer, "%X", value)
 		break
 	default:
 		err = fmt.Errorf("unkown DIF (0x%.2X)", dr.DIB.DIF)
