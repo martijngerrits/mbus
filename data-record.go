@@ -2,9 +2,8 @@ package mbus
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
-	"math"
+	"strconv"
 )
 
 func (dr *DataRecord) DecodeRecordFunction() string {
@@ -77,9 +76,9 @@ func (dr *DataRecord) DecodeUnit() (VIF, error) {
 	return unit, nil
 }
 
-func (dr *DataRecord) DecodeValue() (string, []byte, error) {
+func (dr *DataRecord) DecodeValue() (string, float64, error) {
 	buffer := bytes.Buffer{}
-	rawValue := make([]byte, 8)
+	var rawValue float64
 
 	var intValue int
 	//var floatValue float64
@@ -130,8 +129,12 @@ func (dr *DataRecord) DecodeValue() (string, []byte, error) {
 			}
 
 			value := float64(intValue) * unit.Exp
-			bits := math.Float64bits(value)
-			binary.LittleEndian.PutUint64(rawValue, bits)
+			//bits := math.Float64bits(value)
+			//binary.LittleEndian.PutUint64(rawValue, bits)
+
+			//fmt.Println(value, strconv.FormatInt(int64(value), 16))
+
+			rawValue = value
 
 			_, err = fmt.Fprintf(&buffer, "%.2f", value)
 		}
@@ -205,11 +208,16 @@ func (dr *DataRecord) DecodeValue() (string, []byte, error) {
 			fmt.Printf("DIF 0x%.2x was decoded using %d digit BCD\n", dr.DIB.DIF, dr.DataSize*2)
 		}
 
-		value := float64(intValue) * unit.Exp
-		bits := math.Float64bits(value)
-		binary.LittleEndian.PutUint64(rawValue, bits)
+		//test := []byte(strconv.FormatInt(int64(intValue), 16))
+		//fmt.Println(test)
+		//fmt.Println(binary.BigEndian.Uint64())
+		bla, _ := strconv.Atoi(fmt.Sprintf("%X", intValue))
+		fmt.Println(float64(bla))
 
-		_, err = fmt.Fprintf(&buffer, "%X", value)
+		//fmt.Println(intValue, float64(intValue))
+		rawValue = float64(bla)
+
+		_, err = fmt.Fprintf(&buffer, "%X", intValue)
 		break
 	default:
 		err = fmt.Errorf("unkown DIF (0x%.2X)", dr.DIB.DIF)

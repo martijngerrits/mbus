@@ -133,7 +133,7 @@ type DecodedDataRecord struct {
 	Quantity string
 
 	Value    string
-	RawValue []byte
+	RawValue float64
 }
 
 type DecodedFrame struct {
