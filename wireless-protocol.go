@@ -47,9 +47,8 @@ type WMBusFrame struct {
 
 	Timestamp time.Time
 
-	HeaderEnabled bool
-	CRCEnabled    bool
-	RSSIEnabled   bool
+	CRCEnabled  bool
+	RSSIEnabled bool
 }
 
 func NewWirelessMBusFrame() *WMBusFrame {
@@ -58,10 +57,9 @@ func NewWirelessMBusFrame() *WMBusFrame {
 			Manufacturer: make([]byte, 2),
 			Id:           make([]byte, 4),
 		},
-		FrameData:     MbusDataFrame{},
-		HeaderEnabled: true,
-		CRCEnabled:    true,
-		RSSIEnabled:   false,
+		FrameData:   MbusDataFrame{},
+		CRCEnabled:  true,
+		RSSIEnabled: false,
 	}
 }
 

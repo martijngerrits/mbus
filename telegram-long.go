@@ -9,7 +9,7 @@ type TelegramLong WMBusFrame
 func NewTelegramLong() *TelegramLong {
 	frame := &TelegramLong{
 		Start: FRAME_LONG_START,
-		Stop: FRAME_STOP,
+		Stop:  FRAME_STOP,
 	}
 
 	return frame
@@ -32,7 +32,7 @@ func (f *TelegramLong) CalculateChecksum() byte {
 	//	checksum += f.DeviceType
 	//}
 
-	for i:= 0; i < f.DataSize; i++ {
+	for i := 0; i < f.DataSize; i++ {
 		checksum += f.Data[i]
 	}
 
@@ -56,11 +56,7 @@ func (f *TelegramLong) CalculateLength() int {
 	//   - Status
 	//   - NEncryptedBlocks
 	//   - Encryption mode
-	addSize := 7
-
-	if f.HeaderEnabled {
-		addSize += 8
-	}
+	addSize := 15
 
 	if f.RSSIEnabled {
 		addSize += 1
@@ -76,11 +72,11 @@ func (f *TelegramLong) CalculateLength() int {
 func (f *TelegramLong) VerifyControl() error {
 	if f.Control != CONTROL_MASK_SND_UD &&
 		f.Control != CONTROL_MASK_SND_NR &&
-		f.Control != (CONTROL_MASK_SND_UD | CONTROL_MASK_FCB) &&
+		f.Control != (CONTROL_MASK_SND_UD|CONTROL_MASK_FCB) &&
 		f.Control != CONTROL_MASK_RSP_UD &&
-		f.Control != (CONTROL_MASK_RSP_UD | CONTROL_MASK_DFC) &&
-		f.Control != (CONTROL_MASK_RSP_UD | CONTROL_MASK_ACD) &&
-		f.Control != (CONTROL_MASK_RSP_UD | CONTROL_MASK_DFC | CONTROL_MASK_ACD) {
+		f.Control != (CONTROL_MASK_RSP_UD|CONTROL_MASK_DFC) &&
+		f.Control != (CONTROL_MASK_RSP_UD|CONTROL_MASK_ACD) &&
+		f.Control != (CONTROL_MASK_RSP_UD|CONTROL_MASK_DFC|CONTROL_MASK_ACD) {
 		return fmt.Errorf("unkown Control Code 0x%.2x", f.Control)
 	}
 

@@ -212,7 +212,6 @@ func (dr *DataRecord) DecodeValue() (string, float64, error) {
 		//fmt.Println(test)
 		//fmt.Println(binary.BigEndian.Uint64())
 		bla, _ := strconv.Atoi(fmt.Sprintf("%X", intValue))
-		fmt.Println(float64(bla))
 
 		//fmt.Println(intValue, float64(intValue))
 		rawValue = float64(bla)

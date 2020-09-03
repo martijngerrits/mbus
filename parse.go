@@ -3,204 +3,346 @@ package mbus
 import "fmt"
 
 type ParseReturn struct {
-    Remaining int
-    GotFrame bool
+	Remaining int
+	GotFrame  bool
 }
 
 // https://oms-group.org/fileadmin/files/download4all/specification/Vol2/4.2.1/OMS-Spec_Vol2_AnnexN_C042.pdf
 func ParseWirelessMBusData(frame *WMBusFrame, data *[]byte, dataSize int) (ParseReturn, error) {
-    var length int
+	var frameOffset = 12
 
-    var frameOffset = 0
+	if dataSize <= 0 {
+		return ParseReturn{
+			Remaining: -1,
+			GotFrame:  false,
+		}, fmt.Errorf("got no data")
+	}
 
-    if dataSize <= 0 {
-        return ParseReturn{
-            Remaining: -1,
-            GotFrame:  false,
-        }, fmt.Errorf("got no data")
-    }
+	if DEBUG {
+		fmt.Printf("Attempting to parse binary data [size = %d]\n", dataSize)
 
-    if DEBUG {
-        fmt.Printf("Attempting to parse binary data [size = %d]\n", dataSize)
+		for i := 0; i < dataSize; i++ {
+			fmt.Printf("%.2X ", (*data)[i]&0xFF)
+		}
+		fmt.Println()
+	}
 
-        for i := 0; i < dataSize; i++ {
-            fmt.Printf("%.2X ", (*data)[i] & 0xFF)
-        }
-        fmt.Println()
-    }
+	frame.Start = (*data)[0]
 
-    switch (*data)[0] {
-    case FRAME_ACK_START:
-        // OK, got a valid ack frame, require no more data
-        frame.Start = (*data)[0]
-        frame.Type = FRAME_TYPE_ACK
+	switch frame.Start {
+	case FRAME_ACK_START:
+		frame.Type = FRAME_TYPE_ACK
 
-        return ParseReturn{
-            Remaining: 0,
-            GotFrame: true,
-        }, nil
+		if dataSize < FRAME_BASE_SIZE_SHORT {
+			// OK, got a valid short packet start, but we need more data
+			return ParseReturn{
+				Remaining: FRAME_BASE_SIZE_SHORT - dataSize,
+				GotFrame:  true,
+			}, nil
+		}
 
-    case FRAME_SHORT_START:
-        if dataSize < FRAME_BASE_SIZE_SHORT {
-            // OK, got a valid short packet start, but we need more data
-            return ParseReturn{
-                Remaining: FRAME_BASE_SIZE_SHORT - dataSize,
-                GotFrame:  true,
-            }, nil
-        }
+		if dataSize > FRAME_BASE_SIZE_SHORT {
+			return ParseReturn{
+				Remaining: -2,
+				GotFrame:  true,
+			}, fmt.Errorf("too much data in frame")
+		}
+		break
+	case FRAME_SHORT_START:
+		frame.Type = FRAME_TYPE_SHORT
+		break
+	case FRAME_LONG_START:
+		frame.Type = FRAME_TYPE_LONG
 
-        if dataSize > FRAME_BASE_SIZE_SHORT {
-            return ParseReturn{
-                Remaining: -2,
-                GotFrame:  true,
-            }, fmt.Errorf("too much data in frame")
-        }
+		if dataSize < 3 {
+			// OK, got a valid long/control packet start, but we need
+			// more data to determine the length
+			return ParseReturn{
+				Remaining: 3 - dataSize,
+				GotFrame:  true,
+			}, nil
+		}
+		break
+	default:
+		frame.Type = FRAME_TYPE_ANY
+		break
+	}
 
-        frame.Start = (*data)[0]
-        frame.Length = (*data)[1]
-        frame.Control = (*data)[2]
+	//************************************
+	// Link Layer
+	//************************************
+	frame.Length = (*data)[1]
+	frame.Control = (*data)[2]
 
-        // Is the header sent?
-        if frame.HeaderEnabled {
-            frame.Header.Manufacturer = []byte{(*data)[3], (*data)[4]}
+	frame.Header.Manufacturer = []byte{(*data)[3], (*data)[4]}
+	// The next 4 bytes hold the id (serial number) of the device - LSB first
+	frame.Header.Id = []byte{(*data)[5], (*data)[6], (*data)[7], (*data)[8]}
 
-            // The next 4 bytes hold the id (serial number) of the device - LSB first
-            frame.Header.Id = []byte{(*data)[8], (*data)[7], (*data)[6], (*data)[5]}
+	frame.Header.Version = (*data)[9]
+	frame.Header.DeviceType = (*data)[10]
 
-            frame.Header.Version = (*data)[9]
-            frame.Header.DeviceType = (*data)[10]
+	//************************************
+	// Network Layer
+	//************************************
+	frame.ControlInformation = (*data)[11]
 
-            // Header is 8 bytes long
-            frameOffset = 8
-        }
+	switch frame.ControlInformation {
+	// Short header
+	case 0x61, 0x65, 0x6A, 0x6E, 0x74, 0x7A, 0x7B, 0x7D, 0x7F, 0x8A:
+		// https://github.com/ganehag/pyMeterBus/blob/bc853aa38ac6b10301bdf97f13ac25b36985316f/meterbus/wtelegram_body.py#L323
+		frame.Header.AccessNumber = (*data)[12]
+		frame.Header.Status = (*data)[13]
+		frame.Header.NEncryptedBlocks = int((*data)[14])
+		frame.Header.EncryptionMode = (*data)[15]
 
-        //frame.Checksum = (*data)[3 + frameOffset]
-        frame.Checksum = (*data)[dataSize - 2]
-        frame.Stop = (*data)[dataSize - 1]
+		frameOffset += 4 // Excluded the 2 bytes AES Encryption verification
+		break
+	// Long header
+	case 0x60, 0x64, 0x6B, 0x6F, 0x72, 0x37, 0x75, 0x7C, 0x7E, 0x80, 0x8B:
+		// https://github.com/ganehag/pyMeterBus/blob/bc853aa38ac6b10301bdf97f13ac25b36985316f/meterbus/wtelegram_body.py#L352
+		frameOffset += 12 // Excluded the 2 bytes AES Encryption verification
+		break
+	// Manufacturer specific layer
+	case 0xAA:
+		// @TODO: implement manufacturer specific layer
+		break
+	default:
+		return ParseReturn{
+			Remaining: -1,
+			GotFrame:  false,
+		}, fmt.Errorf("no valid Control Information byte: %.2X", frame.ControlInformation)
+	}
 
-        frame.Type = FRAME_TYPE_SHORT
+	//************************************
+	// Data Blocks
+	//************************************
+	// Set the data size
+	frame.DataSize = int(frame.Length) - frameOffset
 
-        validate := TelegramShort(*frame)
-        if err := validate.Verify(); err != nil {
-            return ParseReturn{
-                Remaining: -3,
-                GotFrame:  false,
-            }, err
-        }
+	// According to the data size, we can determine the Frame Type more accurately
+	if frame.DataSize == 0 {
+		frame.Type = FRAME_TYPE_CONTROL
+	} else {
+		frame.Type = FRAME_TYPE_LONG
+	}
 
-        // Successfully parsed data
-        return ParseReturn{
-            Remaining: 0,
-            GotFrame:  true,
-        }, nil
+	// Reserve space for the data
+	frame.Data = make([]byte, frame.DataSize)
+	// Copy over the data
+	for i := 0; i < frame.DataSize; i++ {
+		frame.Data[i] = (*data)[frameOffset+i]
+	}
 
-    // case FRAME_CONTROL_START: A control frame and a Long frame have the same start byte 0x68
-    case FRAME_LONG_START:
-        if dataSize < 3 {
-            // OK, got a valid long/control packet start, but we need
-            // more data to determine the length
-            return ParseReturn{
-                Remaining: 3 - dataSize,
-                GotFrame:  true,
-            }, nil
-        }
+	// Get the checksum
+	frame.Checksum = (*data)[dataSize-2]
+	// The last byte is the stop byte
+	frame.Stop = (*data)[dataSize-1]
 
-        frame.Start = (*data)[0]
-        frame.Length = (*data)[1]
-        frame.Control = (*data)[2]
+	var err error
+	switch frame.Start {
+	case FRAME_ACK_START:
+		validate := TelegramACK(*frame)
+		err = validate.Verify()
+		break
+	case FRAME_SHORT_START:
+		validate := TelegramShort(*frame)
+		err = validate.Verify()
+		break
+	case FRAME_LONG_START:
+		validate := TelegramLong(*frame)
+		err = validate.Verify()
+		break
+	}
 
-        // Early verify control to see if we did'nt get a FRAME_LONG_START byte
-        // in the middle of another frame which was still in the read buffer
-        validate := TelegramLong(*frame)
-        if err := validate.VerifyControl(); err != nil {
-            return ParseReturn{
-                Remaining: -2,
-                GotFrame:  false,
-            }, err
-        }
+	if err != nil {
+		return ParseReturn{
+			Remaining: -3,
+			GotFrame:  false,
+		}, err
+	}
 
-        if frame.Length < 3 {
-            // not a valid M-bus frame
-            return ParseReturn{
-                Remaining: -2,
-                GotFrame:  false,
-            }, fmt.Errorf("invalid M-Bus frame length")
-        }
-
-        // Make up for the Start & Stop bytes and the Length byte itself,
-        // those are not included in the Length calculation.
-        if int(frame.Length) != dataSize - 3 {
-            return ParseReturn{
-                // Normally the entire frame exists of {Start+Length+Data+Stop} which results in a remaining
-                // of Length + 3, but at this point we already got 3 bytes, so the remaining length is:
-                // Length + 3 - 3, or just: Length
-                Remaining: int(frame.Length),
-                GotFrame:  true,
-            }, nil
-        }
-
-        // Is the header sent?
-        if frame.HeaderEnabled {
-            frame.Header.Manufacturer = []byte{(*data)[3], (*data)[4]}
-
-            // The next 4 bytes hold the id (serial number) of the device - LSB first
-            frame.Header.Id = []byte{(*data)[5], (*data)[6], (*data)[7], (*data)[8]}
-
-            frame.Header.Version = (*data)[9]
-            frame.Header.DeviceType = (*data)[10]
-
-            // Header is 8 bytes long
-            frameOffset = 8
-        }
-
-        frame.ControlInformation = (*data)[3 + frameOffset]
-
-        frame.Header.AccessNumber = (*data)[4 + frameOffset]
-        frame.Header.Status = (*data)[5 + frameOffset]
-        frame.Header.NEncryptedBlocks = int((*data)[6 + frameOffset])
-        frame.Header.EncryptionMode = (*data)[7 + frameOffset]
-
-        // check length of packet:
-        length = int(frame.Length)
-
-        frame.DataSize = length - (8 + frameOffset)
-        //frame.DataSize = length - 2
-        frame.Data = make([]byte, frame.DataSize)
-        for i := 0; i < frame.DataSize; i++ {
-            frame.Data[i] = (*data)[8 + frameOffset + i]
-        }
-
-        frame.Checksum = (*data)[dataSize - 2]
-        // The last byte is the stop byte
-        frame.Stop = (*data)[dataSize - 1]
-
-        if frame.DataSize == 0 {
-            frame.Type = FRAME_TYPE_CONTROL
-        } else {
-            frame.Type = FRAME_TYPE_LONG
-        }
-
-        validate = TelegramLong(*frame)
-        if err := validate.Verify(); err != nil {
-            return ParseReturn{
-                Remaining: -3,
-                GotFrame:  false,
-            }, err
-        }
-
-        // Successfully parsed data
-        return ParseReturn{
-            Remaining: 0,
-            GotFrame:  true,
-        }, nil
-
-    default:
-        return ParseReturn{
-            Remaining: 1,
-            GotFrame:  false,
-        }, nil // fmt.Errorf("invalid M-Bus frame start")
-    }
+	// Successfully parsed data
+	return ParseReturn{
+		Remaining: 0,
+		GotFrame:  true,
+	}, nil
 }
+
+//func ParseWirelessMBusData(frame *WMBusFrame, data *[]byte, dataSize int) (ParseReturn, error) {
+//    var length int
+//
+//    if dataSize <= 0 {
+//        return ParseReturn{
+//            Remaining: -1,
+//            GotFrame:  false,
+//        }, fmt.Errorf("got no data")
+//    }
+//
+//    if DEBUG {
+//        fmt.Printf("Attempting to parse binary data [size = %d]\n", dataSize)
+//
+//        for i := 0; i < dataSize; i++ {
+//            fmt.Printf("%.2X ", (*data)[i] & 0xFF)
+//        }
+//        fmt.Println()
+//    }
+//
+//    switch (*data)[0] {
+//    case FRAME_ACK_START:
+//        // OK, got a valid ack frame, require no more data
+//        frame.Start = (*data)[0]
+//        frame.Type = FRAME_TYPE_ACK
+//
+//        return ParseReturn{
+//            Remaining: 0,
+//            GotFrame: true,
+//        }, nil
+//
+//    case FRAME_SHORT_START:
+//        if dataSize < FRAME_BASE_SIZE_SHORT {
+//            // OK, got a valid short packet start, but we need more data
+//            return ParseReturn{
+//                Remaining: FRAME_BASE_SIZE_SHORT - dataSize,
+//                GotFrame:  true,
+//            }, nil
+//        }
+//
+//        if dataSize > FRAME_BASE_SIZE_SHORT {
+//            return ParseReturn{
+//                Remaining: -2,
+//                GotFrame:  true,
+//            }, fmt.Errorf("too much data in frame")
+//        }
+//
+//        frame.Start = (*data)[0]
+//        frame.Length = (*data)[1]
+//        frame.Control = (*data)[2]
+//
+//        frame.Header.Manufacturer = []byte{(*data)[3], (*data)[4]}
+//
+//        // The next 4 bytes hold the id (serial number) of the device - LSB first
+//        frame.Header.Id = []byte{(*data)[8], (*data)[7], (*data)[6], (*data)[5]}
+//
+//        frame.Header.Version = (*data)[9]
+//        frame.Header.DeviceType = (*data)[10]
+//
+//        //frame.Checksum = (*data)[3 + frameOffset]
+//        frame.Checksum = (*data)[dataSize - 2]
+//        frame.Stop = (*data)[dataSize - 1]
+//
+//        frame.Type = FRAME_TYPE_SHORT
+//
+//        validate := TelegramShort(*frame)
+//        if err := validate.Verify(); err != nil {
+//            return ParseReturn{
+//                Remaining: -3,
+//                GotFrame:  false,
+//            }, err
+//        }
+//
+//        // Successfully parsed data
+//        return ParseReturn{
+//            Remaining: 0,
+//            GotFrame:  true,
+//        }, nil
+//
+//    // case FRAME_CONTROL_START: A control frame and a Long frame have the same start byte 0x68
+//    case FRAME_LONG_START:
+//        if dataSize < 3 {
+//            // OK, got a valid long/control packet start, but we need
+//            // more data to determine the length
+//            return ParseReturn{
+//                Remaining: 3 - dataSize,
+//                GotFrame:  true,
+//            }, nil
+//        }
+//
+//        frame.Start = (*data)[0]
+//        frame.Length = (*data)[1]
+//        frame.Control = (*data)[2]
+//
+//        // Early verify control to see if we did'nt get a FRAME_LONG_START byte
+//        // in the middle of another frame which was still in the read buffer
+//        validate := TelegramLong(*frame)
+//        if err := validate.VerifyControl(); err != nil {
+//            return ParseReturn{
+//                Remaining: -2,
+//                GotFrame:  false,
+//            }, err
+//        }
+//
+//        if frame.Length < 3 {
+//            // not a valid M-bus frame
+//            return ParseReturn{
+//                Remaining: -2,
+//                GotFrame:  false,
+//            }, fmt.Errorf("invalid M-Bus frame length")
+//        }
+//
+//        // Make up for the Start & Stop bytes and the Length byte itself,
+//        // those are not included in the Length calculation.
+//        if int(frame.Length) != dataSize - 3 {
+//            return ParseReturn{
+//                // Normally the entire frame exists of {Start+Length+Data+Stop} which results in a remaining
+//                // of Length + 3, but at this point we already got 3 bytes, so the remaining length is:
+//                // Length + 3 - 3, or just: Length
+//                Remaining: int(frame.Length),
+//                GotFrame:  true,
+//            }, nil
+//        }
+//
+//        frame.Header.Manufacturer = []byte{(*data)[3], (*data)[4]}
+//
+//        // The next 4 bytes hold the id (serial number) of the device - LSB first
+//        frame.Header.Id = []byte{(*data)[5], (*data)[6], (*data)[7], (*data)[8]}
+//
+//        frame.Header.Version = (*data)[9]
+//        frame.Header.DeviceType = (*data)[10]
+//        frame.ControlInformation = (*data)[11]
+//
+//
+//
+//
+//        frame.Header.AccessNumber = (*data)[12]
+//        frame.Header.Status = (*data)[13]
+//        frame.Header.NEncryptedBlocks = int((*data)[14])
+//        frame.Header.EncryptionMode = (*data)[15]
+//
+//        d i := 0; i < frame.DataSize; i++ {
+//            frame.Data[i] = (*data)[16 + i]
+//        }
+//
+//        frame.Checksum = (*data)[dataSize - 2]
+//        // The last byte is the stop byte
+//        frame.Stop = (*data)[dataSize - 1]
+//
+//        if frame.DataSize == 0 {
+//            frame.Type = FRAME_TYPE_CONTROL
+//        } else {
+//            frame.Type = FRAME_TYPE_LONG
+//        }
+//
+//        validate = TelegramLong(*frame)
+//        if err := validate.Verify(); err != nil {
+//            return ParseReturn{
+//                Remaining: -3,
+//                GotFrame:  false,
+//            }, err
+//        }
+//
+//        // Successfully parsed data
+//        return ParseReturn{
+//            Remaining: 0,
+//            GotFrame:  true,
+//        }, nil
+//
+//    default:
+//        return ParseReturn{
+//            Remaining: 1,
+//            GotFrame:  false,
+//        }, nil // fmt.Errorf("invalid M-Bus frame start")
+//    }
+//}
 
 //func ParseWiredMBusData(frame *WiredMBusFrame, data *[]byte, dataSize int) (int, error) {
 //    var length int
