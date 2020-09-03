@@ -74,6 +74,18 @@ func ParseWirelessMBusData(frame *WMBusFrame, data *[]byte, dataSize int) (Parse
 	frame.Length = (*data)[1]
 	frame.Control = (*data)[2]
 
+	// Make up for the Start & Stop bytes and the Length byte itself,
+	// those are not included in the Length calculation.
+	if int(frame.Length) != dataSize-3 {
+		return ParseReturn{
+			// Normally the entire frame exists of {Start+Length+Data+Stop} which results in a remaining
+			// of Length + 3, but at this point we already got 3 bytes, so the remaining length is:
+			// Length + 3 - 3, or just: Length
+			Remaining: int(frame.Length),
+			GotFrame:  true,
+		}, nil
+	}
+
 	frame.Header.Manufacturer = []byte{(*data)[3], (*data)[4]}
 	// The next 4 bytes hold the id (serial number) of the device - LSB first
 	frame.Header.Id = []byte{(*data)[5], (*data)[6], (*data)[7], (*data)[8]}

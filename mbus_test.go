@@ -142,6 +142,8 @@ func TestNewSerialClient(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	DEBUG = true
+
 	defer client.Close()
 
 	fmt.Println("Serial connection made")
