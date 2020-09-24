@@ -1,3 +1,5 @@
+![Test](https://github.com/martijngerrits/mbus/workflows/Test/badge.svg?branch=master)
+
 # Golang MBus Client
 > This is still a work in progress.
 
