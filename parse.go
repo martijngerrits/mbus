@@ -151,16 +151,16 @@ func ParseWirelessMBusData(frame *WMBusFrame, data *[]byte, dataSize int) (Parse
 	frame.Stop = (*data)[dataSize-1]
 
 	var err error
-	switch frame.Start {
-	case FRAME_ACK_START:
+	switch frame.Type {
+	case FRAME_TYPE_ACK:
 		validate := TelegramACK(*frame)
 		err = validate.Verify()
 		break
-	case FRAME_SHORT_START:
+	case FRAME_TYPE_SHORT:
 		validate := TelegramShort(*frame)
 		err = validate.Verify()
 		break
-	case FRAME_LONG_START:
+	case FRAME_TYPE_LONG:
 		validate := TelegramLong(*frame)
 		err = validate.Verify()
 		break
